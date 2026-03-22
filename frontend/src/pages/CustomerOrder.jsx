@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import api from '../api';
+import { supabase } from '../supabaseClient';
+import { QRCodeCanvas } from 'qrcode.react';
 import { ShoppingCart, Check, CreditCard, Utensils, X, Plus, Zap, ArrowRight, Clock, Bell } from 'lucide-react';
 
 /* ── Fonts + keyframes (injected once) ─────────────────────────── */
@@ -97,49 +98,83 @@ export default function CustomerOrder() {
   console.log('isCustomer:', isCustomer);
   console.log('--------------------------------');
 
-  useEffect(() => { fetchTableAndMenu(); fetchNotifications(); }, [tableId]);
+  useEffect(() => { 
+    fetchTableAndMenu(); 
+    fetchNotifications(); 
 
-  useEffect(() => {
-    if (isCustomer) {
-      const iv = setInterval(fetchNotifications, 10000);
-      return () => clearInterval(iv);
-    }
-  }, []);
+    const ordersSubscription = supabase
+      .channel('customer_order')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'orders',
+        filter: `table_id=eq.${tableId}`
+      }, (payload) => {
+        if (activeOrder && payload.new.id === activeOrder.id) {
+          setActiveOrder(prev => ({ ...prev, ...payload.new }));
+        }
+      })
+      .subscribe();
 
-  useEffect(() => {
-    if (!activeOrder || ['completed', 'cancelled'].includes(activeOrder.status)) return;
-    const iv = setInterval(async () => {
-      try {
-        const branchId = activeOrder.table?.branch_id || table?.branch_id;
-        const res = await api.get(`/branches/${branchId}/orders`);
-        const updated = res.data.find(o => o.id === activeOrder.id);
-        if (updated) setActiveOrder(updated);
-      } catch (err) { console.error(err); }
-    }, 3000);
-    return () => clearInterval(iv);
-  }, [activeOrder]);
+    const notifsSubscription = supabase
+      .channel('customer_notifs')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${user?.id}`
+      }, fetchNotifications)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersSubscription);
+      supabase.removeChannel(notifsSubscription);
+    };
+  }, [tableId, activeOrder?.id, user?.id]);
 
   const fetchTableAndMenu = async () => {
     try {
-      const tableRes = await api.get(`/tables/${tableId}`);
-      setTable(tableRes.data);
-      const menuRes = await api.get(`/branches/${tableRes.data.branch_id}/menu`);
-      setMenuItems(menuRes.data);
+      const { data: tableData, error: tableError } = await supabase
+        .from('tables')
+        .select('*')
+        .eq('id', tableId)
+        .single();
+      
+      if (tableError) throw tableError;
+      setTable(tableData);
+
+      const { data: menuData, error: menuError } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('branch_id', tableData.branch_id);
+      
+      if (menuError) throw menuError;
+      setMenuItems(menuData);
     } catch (err) { console.error(err); }
   };
 
   const fetchNotifications = async () => {
-    if (!isCustomer) return;
+    if (!user?.id) return;
     try {
-      const res = await api.get('/my-notifications');
-      setNotifications(res.data);
-      console.log('Fetched notifications:', res.data);
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setNotifications(data);
     } catch (err) { console.error('Error fetching notifications:', err); }
   };
 
   const markNotifRead = async (id) => {
     try {
-      await api.patch(`/notifications/${id}/read`);
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', id);
+      
+      if (error) throw error;
       fetchNotifications();
     } catch (err) { console.error(err); }
   };
@@ -159,19 +194,46 @@ export default function CustomerOrder() {
 
   const confirmPayment = async () => {
     try {
-      const orderRes = await api.post('/orders', {
-        table_id: parseInt(tableId),
-        items: cart.map(i => ({ menu_item_id: i.id, quantity: i.quantity })),
-        promo_code: promoCodeInput || undefined
-      });
-      const payRes = await api.post(`/orders/${orderRes.data.id}/pay?payment_code=${paymentCode}`);
-      setActiveOrder(payRes.data);
+      // 1. Create order
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+          table_id: parseInt(tableId),
+          branch_id: table.branch_id,
+          user_id: user?.id,
+          total_amount: cartTotal,
+          status: 'pending',
+          is_paid: true // Simulating payment success
+        }])
+        .select()
+        .single();
+      
+      if (orderError) throw orderError;
+
+      // 2. Create order items
+      const orderItems = cart.map(item => ({
+        order_id: orderData.id,
+        menu_item_id: item.id,
+        quantity: item.quantity,
+        price_at_order: item.price
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+      
+      if (itemsError) throw itemsError;
+
+      setActiveOrder(orderData);
       setOrderComplete(true);
       setCart([]);
       setIsPaying(false);
       setShowCart(false);
       setPromoCodeInput('');
-    } catch (err) { console.error(err); alert('Order failed. Check promo code.'); }
+    } catch (err) { 
+      console.error(err); 
+      alert('Order failed: ' + err.message); 
+    }
   };
 
   /* ── Order Complete / Receipt screen ─────────────────────────── */
@@ -241,19 +303,22 @@ export default function CustomerOrder() {
             <div className="h-1.5 bg-[#FFD600]" />
 
             {/* QR */}
-            {activeOrder.receipt_qr && (
-              <div className="flex flex-col items-center px-8 pt-8 pb-6 border-b border-dashed border-gray-100">
-                <span className="font-syne text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">
-                  Official Receipt
-                </span>
-                <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-                  <img src={activeOrder.receipt_qr} alt="Receipt QR" className="w-44 h-44 block rounded-xl" />
-                </div>
-                <p className="font-dm text-xs text-gray-400 mt-3 text-center leading-relaxed">
-                  Show this QR to the waiter when they arrive at your table
-                </p>
+            <div className="flex flex-col items-center px-8 pt-8 pb-6 border-b border-dashed border-gray-100">
+              <span className="font-syne text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">
+                Official Receipt
+              </span>
+              <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                <QRCodeCanvas 
+                  value={`RECEIPT-${activeOrder.id}`}
+                  size={176}
+                  level="H"
+                  includeMargin={true}
+                />
               </div>
-            )}
+              <p className="font-dm text-xs text-gray-400 mt-3 text-center leading-relaxed">
+                Show this QR to the waiter when they arrive at your table
+              </p>
+            </div>
 
             {/* Status + total */}
             <div className="px-7 py-6 space-y-3 border-b border-dashed border-gray-100">

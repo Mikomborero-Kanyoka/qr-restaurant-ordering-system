@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../api';
+import { supabase } from '../supabaseClient';
 import { Bell, Check, Utensils, ArrowLeft, QrCode, X, Zap, Upload } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
@@ -81,8 +81,21 @@ export default function WaiterDashboard() {
   /* ── Polling ────────────────────────────────────────────────── */
   useEffect(() => {
     fetchOrders();
-    const iv = setInterval(fetchOrders, 5000);
-    return () => clearInterval(iv);
+    
+    // Real-time subscription for served orders
+    const ordersSubscription = supabase
+      .channel('waiter_orders')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'orders',
+        filter: `branch_id=eq.${branchId}`
+      }, fetchOrders)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersSubscription);
+    };
   }, [branchId]);
 
   /* ── QR Scanner ─────────────────────────────────────────────── */
@@ -99,12 +112,25 @@ export default function WaiterDashboard() {
 
   const onScanSuccess = async (decodedText) => {
     try {
-      const res = await api.post(`/orders/scan-complete?qr_code=${decodedText}`);
-      setScanResult({ success: true, message: res.data.message });
+      // Logic for scan completion:
+      // If code starts with "RECEIPT-", it's an order completion
+      if (decodedText.startsWith('RECEIPT-')) {
+        const orderId = decodedText.replace('RECEIPT-', '');
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'completed' })
+          .eq('id', orderId);
+        
+        if (error) throw error;
+
+        setScanResult({ success: true, message: 'Order marked as completed' });
+      } else {
+        throw new Error('Invalid QR code format');
+      }
       setShowScanner(false);
       fetchOrders();
     } catch (err) {
-      setScanResult({ success: false, message: err.response?.data?.detail || 'Scan failed' });
+      setScanResult({ success: false, message: err.message || 'Scan failed' });
       setShowScanner(false);
     }
   };
@@ -127,8 +153,34 @@ export default function WaiterDashboard() {
 
   const fetchOrders = async () => {
     try {
-      const res = await api.get(`/branches/${branchId}/orders`);
-      setOrders(res.data.filter(o => o.status === 'served'));
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (
+            quantity,
+            menu_items (
+              name,
+              image_url
+            )
+          )
+        `)
+        .eq('branch_id', branchId)
+        .eq('status', 'served')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      // Transform for UI
+      const transformed = data.map(order => ({
+        ...order,
+        items: order.order_items.map(oi => ({
+          quantity: oi.quantity,
+          menu_item: oi.menu_item
+        }))
+      }));
+
+      setOrders(transformed);
     } catch (err) {
       console.error(err);
     }
@@ -136,7 +188,12 @@ export default function WaiterDashboard() {
 
   const completeOrder = async (orderId) => {
     try {
-      await api.patch(`/orders/${orderId}/status?status=completed`);
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'completed' })
+        .eq('id', orderId);
+      
+      if (error) throw error;
       fetchOrders();
     } catch (err) {
       console.error(err);

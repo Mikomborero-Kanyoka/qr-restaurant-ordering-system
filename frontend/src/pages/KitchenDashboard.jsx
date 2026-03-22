@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../api';
+import { supabase } from '../supabaseClient';
 import { Utensils, Check, ChefHat, ArrowLeft, Zap, Clock } from 'lucide-react';
 
 /* ── Fonts + keyframes (injected once) ─────────────────────────── */
@@ -75,14 +75,54 @@ export default function KitchenDashboard() {
 
   useEffect(() => {
     fetchOrders();
-    const iv = setInterval(fetchOrders, 5000);
-    return () => clearInterval(iv);
+
+    // Real-time subscription for new/updated orders
+    const ordersSubscription = supabase
+      .channel('kitchen_orders')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'orders',
+        filter: `branch_id=eq.${branchId}`
+      }, fetchOrders)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersSubscription);
+    };
   }, [branchId]);
 
   const fetchOrders = async () => {
     try {
-      const res = await api.get(`/branches/${branchId}/orders`);
-      setOrders(res.data.filter(o => o.status !== 'completed' && o.status !== 'cancelled'));
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (
+            quantity,
+            menu_items (
+              name,
+              image_url
+            )
+          )
+        `)
+        .eq('branch_id', branchId)
+        .neq('status', 'completed')
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      
+      // Transform for UI (flatten items)
+      const transformed = data.map(order => ({
+        ...order,
+        items: order.order_items.map(oi => ({
+          quantity: oi.quantity,
+          menu_item: oi.menu_items
+        }))
+      }));
+
+      setOrders(transformed);
     } catch (err) {
       console.error(err);
     }
@@ -90,7 +130,12 @@ export default function KitchenDashboard() {
 
   const updateStatus = async (orderId, newStatus) => {
     try {
-      await api.patch(`/orders/${orderId}/status?status=${newStatus}`);
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
+      
+      if (error) throw error;
       fetchOrders();
     } catch (err) {
       console.error(err);
