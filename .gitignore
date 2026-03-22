@@ -1,0 +1,34 @@
+# Environments
+.venv
+venv
+env
+ENV
+bin
+lib
+share
+pyvenv.cfg
+*.pyc
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Databases
+*.db
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# App specific
+backend/uploads/*
+!backend/uploads/.gitkeep

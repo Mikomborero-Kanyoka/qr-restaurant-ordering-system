@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #facc15; /* Yellow-400 */
+  --color-secondary: #ffffff;
+  --color-accent: #000000;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+  --primary: #fef08a; /* Lighter yellow */
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  --primary: #eab308; /* Darker yellow for contrast in dark mode */
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
