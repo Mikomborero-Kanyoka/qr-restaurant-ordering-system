@@ -135,7 +135,7 @@ export default function AdminDashboard() {
       const { data: userData, error: fetchError } = await supabase
         .from('users')
         .select('id')
-        .eq('username', newEmployee.email) // Our username column stores the email for now or actual username
+        .eq('email', newEmployee.email.trim()) 
         .maybeSingle();
 
       if (fetchError) throw fetchError;

@@ -89,7 +89,8 @@ export default function CustomerSignup() {
           .insert([{ 
             id: data.user.id, 
             role: 'customer',
-            username: username
+            username: username,
+            email: email
           }]);
         
         if (profileError) console.error('Profile creation error:', profileError);

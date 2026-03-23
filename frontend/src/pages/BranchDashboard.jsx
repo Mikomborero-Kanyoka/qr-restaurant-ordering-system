@@ -301,7 +301,7 @@ export default function BranchDashboard() {
       const { data: userData, error: fetchError } = await supabase
         .from('users')
         .select('id')
-        .eq('username', newEmployee.email) 
+        .eq('email', newEmployee.email.trim()) 
         .maybeSingle();
 
       if (fetchError) throw fetchError;
