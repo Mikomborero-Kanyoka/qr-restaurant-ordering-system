@@ -127,7 +127,7 @@ export default function StaffSignup() {
           {/* Success message */}
           {success && (
             <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 text-green-600 font-syne font-bold text-sm uppercase tracking-wide mb-6">
-              Application submitted! Please check your email for a confirmation link. An admin will assign you a branch shortly.
+              Application submitted! Please check your email for a confirmation link. An admin will assign your branch and role after approval.
             </div>
           )}
 
@@ -185,7 +185,7 @@ export default function StaffSignup() {
           ) : (
             <div className="text-center py-6">
               <p className="font-dm text-gray-500 mb-8">
-                Once confirmed and assigned by an admin, you can sign in to your staff portal.
+                Once your email is confirmed and an admin assigns your branch and role, you can sign in to your staff portal.
               </p>
               <Link
                 to="/login"

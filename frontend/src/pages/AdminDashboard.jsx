@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { Plus, Users, Building, ChevronRight, Store, X, Zap } from 'lucide-react';
+import {
+  ADMIN_ASSIGNABLE_ROLES,
+  fetchUserProfile,
+  getDashboardPath,
+  getEffectiveBranchId,
+  getEffectiveRole,
+} from '../authProfile';
 
 /* ── Fonts + keyframes (injected once) ─────────────────────────── */
 if (!document.querySelector('[data-ad-fonts]')) {
@@ -90,29 +97,54 @@ export default function AdminDashboard() {
   const [showAssignBranch, setShowAssignBranch] = useState(false);
   const [selectedStaff,   setSelectedStaff]   = useState(null);
   const [assignBranchId,  setAssignBranchId]  = useState('');
+  const [assignRole,      setAssignRole]      = useState('');
   const [activeTab,       setActiveTab]       = useState('branches');
 
   const [user, setUser] = useState(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
-        const role = session.user.user_metadata?.role || session.user.app_metadata?.role;
-        if (role !== 'admin') {
-          navigate('/login');
-        }
-      } else {
-        navigate('/login');
-      }
-    });
+    const loadAdmin = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
 
-    fetchBranches();
-    fetchEmployees();
+        if (!session?.user) {
+          navigate('/login', { replace: true });
+          return;
+        }
+
+        setUser(session.user);
+
+        const profile = await fetchUserProfile(session.user.id).catch((profileError) => {
+          console.error('Failed to load profile:', profileError);
+          return null;
+        });
+
+        const role = getEffectiveRole(session.user, profile);
+        const branchId = getEffectiveBranchId(session.user, profile);
+
+        if (role !== 'admin') {
+          navigate(getDashboardPath(role, branchId) || '/login', { replace: true });
+          return;
+        }
+
+        await Promise.all([fetchBranches(), fetchEmployees()]);
+      } finally {
+        setIsCheckingAccess(false);
+      }
+    };
+
+    loadAdmin();
   }, [navigate]);
 
   const fetchBranches  = async () => { try { const { data, error } = await supabase.from('branches').select('*'); if (error) throw error; setBranches(data);  } catch(e){ console.error(e); } };
-  const fetchEmployees = async () => { try { const { data, error } = await supabase.from('users').select('*').neq('role', 'customer'); if (error) throw error; setEmployees(data); } catch(e){ console.error(e); } };
+  const fetchEmployees = async () => {
+    try {
+      const { data, error } = await supabase.from('users').select('*');
+      if (error) throw error;
+      setEmployees((data || []).filter(emp => !['customer', 'admin'].includes(emp.role)));
+    } catch(e){ console.error(e); }
+  };
 
   const handleAddBranch = async (e) => {
     e.preventDefault();
@@ -127,15 +159,14 @@ export default function AdminDashboard() {
 
   const handleAssignBranch = async (e) => {
     e.preventDefault();
-    if (!selectedStaff || !assignBranchId) return;
+    if (!selectedStaff || !assignBranchId || !assignRole) return;
 
     try {
       const { error } = await supabase
         .from('users')
         .update({
           branch_id: parseInt(assignBranchId),
-          // If they were pending, move them to 'staff' so manager can then assign specific role
-          role: selectedStaff.role === 'pending_staff' ? 'staff' : selectedStaff.role
+          role: assignRole
         })
         .eq('id', selectedStaff.id);
 
@@ -144,13 +175,24 @@ export default function AdminDashboard() {
       setShowAssignBranch(false);
       setSelectedStaff(null);
       setAssignBranchId('');
+      setAssignRole('');
       fetchEmployees();
-      alert('Branch assigned successfully!');
+      alert('Branch and role assigned successfully!');
     } catch(err){ 
       console.error(err); 
-      alert('Failed to assign branch: ' + err.message);
+      alert('Failed to save assignment: ' + err.message);
     }
   };
+
+  if (isCheckingAccess) {
+    return (
+      <div className="font-dm min-h-svh bg-[#f2f2f0] flex items-center justify-center">
+        <p className="font-syne text-xs font-bold uppercase tracking-widest text-gray-400">
+          Loading admin workspace
+        </p>
+      </div>
+    );
+  }
 
   /* ── Main ───────────────────────────────────────────────────── */
   return (
@@ -278,10 +320,15 @@ export default function AdminDashboard() {
                         </p>
                       </div>
                       <button
-                        onClick={() => { setSelectedStaff(emp); setShowAssignBranch(true); }}
+                        onClick={() => {
+                          setSelectedStaff(emp);
+                          setAssignBranchId('');
+                          setAssignRole('');
+                          setShowAssignBranch(true);
+                        }}
                         className="bg-[#0a0a0a] text-white font-syne font-bold text-xs uppercase tracking-wide px-5 py-3 rounded-xl hover:bg-gray-800 transition-all active:scale-95"
                       >
-                        Assign Branch
+                        Assign Branch & Role
                       </button>
                     </div>
                   ))}
@@ -326,7 +373,12 @@ export default function AdminDashboard() {
                         {emp.role}
                       </span>
                       <button
-                        onClick={() => { setSelectedStaff(emp); setAssignBranchId(emp.branch_id || ''); setShowAssignBranch(true); }}
+                        onClick={() => {
+                          setSelectedStaff(emp);
+                          setAssignBranchId(emp.branch_id || '');
+                          setAssignRole(ADMIN_ASSIGNABLE_ROLES.includes(emp.role) ? emp.role : '');
+                          setShowAssignBranch(true);
+                        }}
                         className="p-2 hover:bg-gray-100 rounded-lg transition-all"
                       >
                         <Building size={16} className="text-gray-400" />
@@ -344,7 +396,7 @@ export default function AdminDashboard() {
       {showAssignBranch && (
         <Modal
           onClose={() => setShowAssignBranch(false)}
-          title="Assign Branch"
+          title="Manage Assignment"
           icon={<Building size={18} color="#0a0a0a" />}
         >
           <form onSubmit={handleAssignBranch} className="space-y-5">
@@ -364,7 +416,20 @@ export default function AdminDashboard() {
                 <option value="">Choose a branch…</option>
                 {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
-              <p className="text-[10px] text-gray-400 italic">Assigning a branch allows the branch manager to set their role.</p>
+              <p className="text-[10px] text-gray-400 italic">New staff stay idle until a branch and role are both assigned.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Select Role</label>
+              <select
+                className={selectCls}
+                value={assignRole}
+                onChange={e => setAssignRole(e.target.value)}
+                required
+              >
+                <option value="">Choose a role...</option>
+                {ADMIN_ASSIGNABLE_ROLES.map(role => <option key={role} value={role}>{role.toUpperCase()}</option>)}
+              </select>
             </div>
 
             <div className="flex gap-3 pt-2">
@@ -379,7 +444,7 @@ export default function AdminDashboard() {
                 type="submit"
                 className="flex-1 py-4 bg-[#FFD600] text-[#0a0a0a] font-syne font-extrabold uppercase text-sm rounded-2xl shadow-[0_4px_16px_rgba(255,214,0,.3)] hover:-translate-y-0.5 active:scale-95 transition-all"
               >
-                Confirm Assignment
+                Save Assignment
               </button>
             </div>
           </form>

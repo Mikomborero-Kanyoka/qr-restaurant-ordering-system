@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { LogIn, QrCode, Utensils, Zap, ChefHat, UserCircle, X, Camera, ArrowRight, Chrome, RefreshCw } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import {
+  fetchUserProfile,
+  getDashboardPath,
+  getEffectiveBranchId,
+  getEffectiveRole,
+} from '../authProfile';
 
 // Inject Google Fonts + keyframes once
 const styleTag = document.createElement('style');
@@ -139,26 +145,54 @@ function Login() {
   const [isScanning, setIsScanning] = useState(false);
   const [facingMode, setFacingMode] = useState('environment'); // 'user' or 'environment'
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(window.location.search);
   const redirect = queryParams.get('redirect');
 
   useEffect(() => {
-    // Check current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
+    const syncSession = async (sessionArg = null) => {
+      const session = sessionArg ?? (await supabase.auth.getSession()).data.session;
+      const sessionUser = session?.user ?? null;
+
+      setUser(sessionUser);
+
+      if (!sessionUser) {
+        setUserRole(null);
+        return;
       }
-    });
+
+      const profile = await fetchUserProfile(sessionUser.id).catch((profileError) => {
+        console.error('Failed to load profile:', profileError);
+        return null;
+      });
+
+      const role = getEffectiveRole(sessionUser, profile);
+      const branchId = getEffectiveBranchId(sessionUser, profile);
+      const destination = getDashboardPath(role, branchId);
+
+      setUserRole(role);
+
+      if (redirect) {
+        navigate(redirect, { replace: true });
+        return;
+      }
+
+      if (destination && role !== 'customer') {
+        navigate(destination, { replace: true });
+      }
+    };
+
+    syncSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      syncSession(session);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate, redirect]);
 
-  const isCustomer = user?.user_metadata?.role === 'customer' || user?.app_metadata?.role === 'customer' || !!user;
+  const isCustomer = userRole === 'customer';
 
   useEffect(() => {
     let html5QrCode;
@@ -208,21 +242,36 @@ function Login() {
 
       if (error) throw error;
 
-      // Handle redirect logic based on user role (stored in metadata)
-      const role = data.user.user_metadata?.role;
-      const branch_id = data.user.user_metadata?.branch_id;
+      const profile = await fetchUserProfile(data.user.id).catch((profileError) => {
+        console.error('Failed to load profile:', profileError);
+        return null;
+      });
+
+      const role = getEffectiveRole(data.user, profile);
+      const branchId = getEffectiveBranchId(data.user, profile);
+      const destination = getDashboardPath(role, branchId);
+
+      setUserRole(role);
       
       if (redirect) {
         navigate(redirect);
         return;
       }
 
-      if (role === 'admin') navigate('/admin');
-      else if (role === 'kitchen') navigate(`/kitchen/${branch_id || 1}`);
-      else if (role === 'waiter') navigate(`/waiter/${branch_id || 1}`);
-      else if (['manager', 'supervisor', 'staff'].includes(role)) navigate(`/branch/${branch_id || 1}`);
-      else {
+      if (!role) {
+        setError('Your account profile is still syncing. Please try again in a moment.');
+        return;
+      }
+
+      if (role === 'customer') {
         setShowCustomerLogin(false);
+        return;
+      }
+
+      if (destination) {
+        navigate(destination);
+      } else {
+        setError('Your account is still waiting for admin setup. Please try again shortly.');
       }
     } catch (err) {
       if (err.message?.includes('Invalid login credentials') || err.status === 400) {
@@ -246,6 +295,7 @@ function Login() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setUserRole(null);
   };
 
   return (

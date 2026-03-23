@@ -3,6 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { Bell, Check, Utensils, ArrowLeft, QrCode, X, Zap, Upload } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import {
+  fetchUserProfile,
+  getDashboardPath,
+  getEffectiveBranchId,
+  getEffectiveRole,
+  isManagementRole,
+} from '../authProfile';
 
 /* ── Fonts + keyframes (injected once) ─────────────────────────── */
 if (!document.querySelector('[data-wd-fonts]')) {
@@ -78,22 +85,52 @@ export default function WaiterDashboard() {
   const [isMgmt, setIsMgmt] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
-        const role = session.user.user_metadata?.role || session.user.app_metadata?.role;
-        setIsMgmt(['admin', 'manager', 'supervisor'].includes(role));
+    const syncUser = async (sessionArg = null) => {
+      const session = sessionArg ?? (await supabase.auth.getSession()).data.session;
+
+      if (!session?.user) {
+        navigate('/login', { replace: true });
+        return;
       }
-    });
+
+      setUser(session.user);
+
+      const profile = await fetchUserProfile(session.user.id).catch((profileError) => {
+        console.error('Failed to load profile:', profileError);
+        return null;
+      });
+
+      const role = getEffectiveRole(session.user, profile);
+      const assignedBranchId = getEffectiveBranchId(session.user, profile);
+      const destination = getDashboardPath(role, assignedBranchId);
+
+      setIsMgmt(isManagementRole(role));
+
+      if (!role) return;
+
+      if (!['admin', 'manager', 'supervisor', 'waiter'].includes(role)) {
+        navigate(destination || '/login', { replace: true });
+        return;
+      }
+
+      if (role !== 'admin' && !assignedBranchId) {
+        navigate(destination || '/staff/pending', { replace: true });
+        return;
+      }
+
+      if (role !== 'admin' && assignedBranchId && String(assignedBranchId) !== String(branchId)) {
+        navigate(`/waiter/${assignedBranchId}`, { replace: true });
+      }
+    };
+
+    syncUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      const role = session?.user?.user_metadata?.role || session?.user?.app_metadata?.role;
-      setIsMgmt(['admin', 'manager', 'supervisor'].includes(role));
+      syncUser(session);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [branchId, navigate]);
 
   /* ── Polling ────────────────────────────────────────────────── */
   useEffect(() => {

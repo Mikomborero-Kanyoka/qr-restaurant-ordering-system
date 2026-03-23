@@ -9,6 +9,7 @@ import BranchDashboard from './pages/BranchDashboard';
 import KitchenDashboard from './pages/KitchenDashboard';
 import WaiterDashboard from './pages/WaiterDashboard';
 import CustomerOrder from './pages/CustomerOrder';
+import StaffPending from './pages/StaffPending';
 import { Sun, Moon } from 'lucide-react';
 
 function App() {
@@ -41,6 +42,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<CustomerSignup />} />
           <Route path="/staff/signup" element={<StaffSignup />} />
+          <Route path="/staff/pending" element={<StaffPending />} />
           <Route path="/history" element={<CustomerHistory />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/branch/:branchId" element={<BranchDashboard />} />

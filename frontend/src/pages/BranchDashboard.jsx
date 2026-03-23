@@ -6,6 +6,13 @@ import {
   Plus, Utensils, Printer, Users, ShoppingBag,
   Clock, X, Zap, LayoutDashboard, Upload, ImageIcon,
 } from 'lucide-react';
+import {
+  fetchUserProfile,
+  getDashboardPath,
+  getEffectiveBranchId,
+  getEffectiveRole,
+  isManagementRole,
+} from '../authProfile';
 
 /* ── Fonts + keyframes (injected once) ─────────────────────────── */
 if (!document.querySelector('[data-bd-fonts]')) {
@@ -123,22 +130,52 @@ export default function BranchDashboard() {
   const [isMgmt, setIsMgmt] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
-        const role = session.user.user_metadata?.role || session.user.app_metadata?.role;
-        setIsMgmt(['admin', 'manager', 'supervisor'].includes(role));
+    const syncUser = async (sessionArg = null) => {
+      const session = sessionArg ?? (await supabase.auth.getSession()).data.session;
+
+      if (!session?.user) {
+        navigate('/login', { replace: true });
+        return;
       }
-    });
+
+      setUser(session.user);
+
+      const profile = await fetchUserProfile(session.user.id).catch((profileError) => {
+        console.error('Failed to load profile:', profileError);
+        return null;
+      });
+
+      const role = getEffectiveRole(session.user, profile);
+      const assignedBranchId = getEffectiveBranchId(session.user, profile);
+      const destination = getDashboardPath(role, assignedBranchId);
+
+      setIsMgmt(isManagementRole(role));
+
+      if (!role) return;
+
+      if (!['admin', 'manager', 'supervisor', 'staff'].includes(role)) {
+        navigate(destination || '/login', { replace: true });
+        return;
+      }
+
+      if (role !== 'admin' && !assignedBranchId) {
+        navigate(destination || '/staff/pending', { replace: true });
+        return;
+      }
+
+      if (role !== 'admin' && assignedBranchId && String(assignedBranchId) !== String(branchId)) {
+        navigate(`/branch/${assignedBranchId}`, { replace: true });
+      }
+    };
+
+    syncUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      const role = session?.user?.user_metadata?.role || session?.user?.app_metadata?.role;
-      setIsMgmt(['admin', 'manager', 'supervisor'].includes(role));
+      syncUser(session);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [branchId, navigate]);
 
   useEffect(() => {
     fetchTables(); fetchMenu(); fetchEmployees(); fetchOrders(); fetchRoles(); fetchCustomers();
@@ -563,39 +600,13 @@ export default function BranchDashboard() {
         {activeTab === 'employees' && (
           <div className="anim-2 space-y-10">
             
-            {/* Needs Role Section */}
-            {employees.filter(e => e.role === 'staff').length > 0 && (
-              <div className="space-y-5">
-                <div className="flex items-center justify-between px-1 pt-2">
-                  <h2 className="font-syne text-2xl font-black text-[#0a0a0a] tracking-tight">New Personnel</h2>
-                </div>
-                <div className="space-y-3">
-                  {employees.filter(e => e.role === 'staff').map((emp, idx) => (
-                    <div key={emp.id} className="hover-lift bg-white rounded-3xl border border-black/[0.06] shadow-sm overflow-hidden relative flex items-center gap-5 pl-6 pr-6 py-6">
-                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#FFD600] rounded-l-3xl" />
-                      <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center shrink-0">
-                        <Users size={26} className="text-[#0a0a0a]" strokeWidth={1.5} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">{emp.username}</p>
-                      </div>
-                      <button onClick={() => { setSelectedStaff(emp); setNewRole(''); setShowRoleModal(true); }}
-                        className="bg-[#0a0a0a] text-white font-syne font-bold text-xs uppercase tracking-wide px-5 py-3 rounded-xl hover:bg-gray-800 transition-all active:scale-95">
-                        Assign Role
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Active Personnel Section */}
             <div className="space-y-5">
               <div className="flex items-center justify-between px-1 pt-2">
                 <h2 className="font-syne text-2xl font-black text-[#0a0a0a] tracking-tight">Branch Staff</h2>
               </div>
               <div className="space-y-3">
-                {employees.filter(e => e.role !== 'staff').map((emp, idx) => (
+                {employees.map((emp, idx) => (
                   <div key={emp.id} className="hover-lift bg-white rounded-3xl border border-black/[0.06] shadow-sm overflow-hidden relative flex items-center gap-5 pl-6 pr-6 py-6" style={{ animationDelay: `${idx * 0.04}s` }}>
                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#FFD600] rounded-l-3xl" />
                     <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center shrink-0">
@@ -606,7 +617,7 @@ export default function BranchDashboard() {
                       <p className="font-dm text-sm text-gray-400 mt-0.5">{emp.role.toUpperCase()} • Branch #{branchId}</p>
                     </div>
                     {isMgmt && (
-                      <button onClick={() => { setSelectedStaff(emp); setNewRole(emp.role); setShowRoleModal(true); }}
+                      <button onClick={() => { setSelectedStaff(emp); setNewRole(['manager', 'supervisor', 'waiter', 'kitchen'].includes(emp.role) ? emp.role : ''); setShowRoleModal(true); }}
                         className="p-3 hover:bg-gray-100 rounded-2xl transition-all">
                         <Zap size={18} className="text-gray-400" />
                       </button>
