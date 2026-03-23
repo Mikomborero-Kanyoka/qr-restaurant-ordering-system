@@ -82,18 +82,6 @@ export default function StaffSignup() {
 
       if (signupError) throw signupError;
       
-      if (data?.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .upsert([{ 
-            id: data.user.id, 
-            role: 'pending_staff',
-            username: username
-          }], { onConflict: 'id' });
-        
-        if (profileError) console.error('Profile creation error:', profileError);
-      }
-
       setSuccess(true);
     } catch (err) {
       setError(err.message || 'Signup failed.');

@@ -82,19 +82,6 @@ export default function CustomerSignup() {
 
       if (signupError) throw signupError;
       
-      // Also create a entry in our public.users table for profile data
-      if (data?.user) {
-        const { error: profileError } = await supabase
-          .from('users')
-          .upsert([{ 
-            id: data.user.id, 
-            role: 'customer',
-            username: username
-          }], { onConflict: 'id' });
-        
-        if (profileError) console.error('Profile creation error:', profileError);
-      }
-
       if (data?.session) {
         navigate('/');
       } else {
