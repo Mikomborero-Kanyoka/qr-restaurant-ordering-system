@@ -274,7 +274,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">
-                          {emp.full_name || emp.username}
+                          {emp.username}
                         </p>
                       </div>
                       <button
@@ -314,7 +314,7 @@ export default function AdminDashboard() {
 
                     <div className="flex-1 min-w-0">
                       <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">
-                        {emp.full_name || emp.username}
+                        {emp.username}
                       </p>
                       <p className="font-dm text-sm text-gray-400 mt-0.5">
                         {branches.find(b => b.id === emp.branch_id)?.name || 'Needs Assignment'}
@@ -350,8 +350,7 @@ export default function AdminDashboard() {
           <form onSubmit={handleAssignBranch} className="space-y-5">
             <div className="p-4 bg-gray-50 rounded-2xl border border-black/[0.04]">
               <p className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Target Personnel</p>
-              <p className="font-syne text-base font-extrabold text-[#0a0a0a]">{selectedStaff?.full_name || selectedStaff?.username}</p>
-              <p className="font-dm text-xs text-gray-400">{selectedStaff?.email}</p>
+              <p className="font-syne text-base font-extrabold text-[#0a0a0a]">{selectedStaff?.username}</p>
             </div>
 
             <div className="space-y-2">

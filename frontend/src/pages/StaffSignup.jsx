@@ -51,7 +51,6 @@ const inputCls =
 
 export default function StaffSignup() {
   const [username, setUsername] = useState('');
-  const [fullName, setFullName] = useState('');
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState('');
@@ -76,8 +75,7 @@ export default function StaffSignup() {
           emailRedirectTo: window.location.origin + '/login',
           data: {
             role: 'pending_staff',
-            username: username,
-            full_name: fullName
+            username: username
           }
         }
       });
@@ -90,8 +88,7 @@ export default function StaffSignup() {
           .insert([{ 
             id: data.user.id, 
             role: 'pending_staff',
-            username: username,
-            full_name: fullName
+            username: username
           }]);
         
         if (profileError) console.error('Profile creation error:', profileError);
@@ -148,20 +145,6 @@ export default function StaffSignup() {
 
           {!success ? (
             <form onSubmit={handleSignup} className="space-y-5">
-              <div className="space-y-2">
-                <label className="font-syne text-xs font-bold uppercase tracking-widest text-gray-400">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  className={inputCls}
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  required
-                />
-              </div>
-
               <div className="space-y-2">
                 <label className="font-syne text-xs font-bold uppercase tracking-widest text-gray-400">
                   Username (3-15 chars)

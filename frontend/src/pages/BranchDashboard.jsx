@@ -577,8 +577,7 @@ export default function BranchDashboard() {
                         <Users size={26} className="text-[#0a0a0a]" strokeWidth={1.5} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">{emp.full_name || emp.username}</p>
-                        <p className="font-dm text-sm text-gray-400 mt-0.5">{emp.email}</p>
+                        <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">{emp.username}</p>
                       </div>
                       <button onClick={() => { setSelectedStaff(emp); setNewRole(''); setShowRoleModal(true); }}
                         className="bg-[#0a0a0a] text-white font-syne font-bold text-xs uppercase tracking-wide px-5 py-3 rounded-xl hover:bg-gray-800 transition-all active:scale-95">
@@ -603,7 +602,7 @@ export default function BranchDashboard() {
                       <Users size={26} className="text-[#0a0a0a]" strokeWidth={1.5} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">{emp.full_name || emp.username}</p>
+                      <p className="font-syne text-lg font-extrabold text-[#0a0a0a] leading-snug">{emp.username}</p>
                       <p className="font-dm text-sm text-gray-400 mt-0.5">{emp.role.toUpperCase()} • Branch #{branchId}</p>
                     </div>
                     {isMgmt && (
@@ -707,8 +706,7 @@ export default function BranchDashboard() {
           <form onSubmit={handleUpdateRole} className="space-y-5">
             <div className="p-4 bg-gray-50 rounded-2xl border border-black/[0.04]">
               <p className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Target Personnel</p>
-              <p className="font-syne text-base font-extrabold text-[#0a0a0a]">{selectedStaff?.full_name || selectedStaff?.username}</p>
-              <p className="font-dm text-xs text-gray-400">{selectedStaff?.email}</p>
+              <p className="font-syne text-base font-extrabold text-[#0a0a0a]">{selectedStaff?.username}</p>
             </div>
 
             <div className="space-y-2">
