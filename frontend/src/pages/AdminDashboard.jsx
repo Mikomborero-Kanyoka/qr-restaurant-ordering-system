@@ -87,7 +87,7 @@ export default function AdminDashboard() {
   const [employees,       setEmployees]       = useState([]);
   const [roles,           setRoles]           = useState([]);
   const [newBranch,       setNewBranch]       = useState({ name: '', address: '' });
-  const [newEmployee,     setNewEmployee]     = useState({ username: '', password: '', role: '', branch_id: '' });
+  const [newEmployee,     setNewEmployee]     = useState({ email: '', role: '', branch_id: '' });
   const [showAddBranch,   setShowAddBranch]   = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [activeTab,       setActiveTab]       = useState('branches');
@@ -130,19 +130,45 @@ export default function AdminDashboard() {
   const handleAddEmployee = async (e) => {
     e.preventDefault();
     try {
-      // In a real migration, this would involve creating a user in Supabase Auth
-      // and then updating the public.users table. 
-      // For now, we'll just insert into the public.users table for the UI demo.
-      const { error } = await supabase.from('users').insert([{
-        username: newEmployee.username,
-        role: newEmployee.role,
-        branch_id: newEmployee.branch_id ? parseInt(newEmployee.branch_id) : null,
-      }]);
+      // 1. Find the user by email in the public.users table (populated via signup)
+      // Note: This requires the staff member to have already created a customer account
+      const { data: userData, error: fetchError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', newEmployee.email) // Our username column stores the email for now or actual username
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      
+      let targetId = userData?.id;
+
+      // If not found in users table, they might not have a profile but exist in Auth
+      // However, we can't search Auth easily without Admin API.
+      // So we assume they signed up and have a profile.
+      
+      if (!targetId) {
+        alert('User with this email/username not found. Please ensure they have signed up first.');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({
+          role: newEmployee.role,
+          branch_id: newEmployee.branch_id ? parseInt(newEmployee.branch_id) : null,
+        })
+        .eq('id', targetId);
+
       if (error) throw error;
-      setNewEmployee({ username: '', password: '', role: '', branch_id: '' });
+
+      setNewEmployee({ email: '', role: '', branch_id: '' });
       setShowAddEmployee(false);
       fetchEmployees();
-    } catch(err){ console.error(err); }
+      alert('Staff member onboarded successfully!');
+    } catch(err){ 
+      console.error(err); 
+      alert('Failed to onboard staff: ' + err.message);
+    }
   };
 
   /* ── Main ───────────────────────────────────────────────────── */
@@ -302,33 +328,21 @@ export default function AdminDashboard() {
           icon={<Users size={18} color="#0a0a0a" />}
         >
           <form onSubmit={handleAddEmployee} className="space-y-5">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Username</label>
-                <input
-                  type="text"
-                  className={inputCls}
-                  placeholder="e.g. john_doe"
-                  value={newEmployee.username}
-                  onChange={e => setNewEmployee({ ...newEmployee, username: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Password</label>
-                <input
-                  type="password"
-                  className={inputCls}
-                  placeholder="••••••••"
-                  value={newEmployee.password}
-                  onChange={e => setNewEmployee({ ...newEmployee, password: e.target.value })}
-                  required
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">User Email / Username</label>
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="e.g. john@example.com"
+                value={newEmployee.email}
+                onChange={e => setNewEmployee({ ...newEmployee, email: e.target.value })}
+                required
+              />
+              <p className="text-[10px] text-gray-400 italic">User must have signed up for an account first.</p>
             </div>
 
             <div className="space-y-2">
-              <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Role</label>
+              <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Assigned Role</label>
               <select
                 className={selectCls}
                 value={newEmployee.role}
@@ -364,7 +378,7 @@ export default function AdminDashboard() {
                 type="submit"
                 className="flex-1 py-4 bg-[#FFD600] text-[#0a0a0a] font-syne font-extrabold uppercase text-sm rounded-2xl shadow-[0_4px_16px_rgba(255,214,0,.3)] hover:-translate-y-0.5 active:scale-95 transition-all"
               >
-                Confirm Hired
+                Promote to Staff
               </button>
             </div>
           </form>

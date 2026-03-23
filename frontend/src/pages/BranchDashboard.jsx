@@ -109,7 +109,7 @@ export default function BranchDashboard() {
   const [newTableNum,     setNewTableNum]     = useState('');
   const [bulkCount,       setBulkCount]       = useState('');
   const [newMenuItem,     setNewMenuItem]     = useState({ name: '', description: '', price: '', image_url: '' });
-  const [newEmployee,     setNewEmployee]     = useState({ username: '', password: '', role: '', branch_id: branchId });
+  const [newEmployee,     setNewEmployee]     = useState({ email: '', role: '' });
   const [showAddMenu,     setShowAddMenu]     = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [isUploading,     setIsUploading]     = useState(false);
@@ -297,17 +297,40 @@ export default function BranchDashboard() {
   const handleAddEmployee = async (e) => {
     e.preventDefault();
     try {
-      // Note: Full auth migration would use supabase.auth.admin.createUser
-      const { error } = await supabase.from('users').insert([{ 
-        username: newEmployee.username, 
-        role: newEmployee.role, 
-        branch_id: parseInt(branchId) 
-      }]);
+      // 1. Find the user by email in the public.users table (populated via signup)
+      const { data: userData, error: fetchError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', newEmployee.email) 
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      
+      let targetId = userData?.id;
+
+      if (!targetId) {
+        alert('User with this email/username not found. Please ensure they have signed up first.');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({
+          role: newEmployee.role,
+          branch_id: parseInt(branchId),
+        })
+        .eq('id', targetId);
+
       if (error) throw error;
-      setNewEmployee({ username: '', password: '', role: '', branch_id: branchId });
+
+      setNewEmployee({ email: '', role: '' });
       setShowAddEmployee(false);
       fetchEmployees();
-    } catch(e){ console.error(e); }
+      alert('Staff member onboarded successfully!');
+    } catch(err){ 
+      console.error(err); 
+      alert('Failed to onboard staff: ' + err.message);
+    }
   };
 
   const updateOrderStatus = async (orderId, status) => {
@@ -670,17 +693,11 @@ export default function BranchDashboard() {
       {showAddEmployee && (
         <Modal onClose={() => setShowAddEmployee(false)} title="Hire Staff" icon={<Users size={18} color="#0a0a0a" />}>
           <form onSubmit={handleAddEmployee} className="space-y-5">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Username</label>
-                <input className={inputCls} placeholder="e.g. jane_doe"
-                  value={newEmployee.username} onChange={e => setNewEmployee({ ...newEmployee, username: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Password</label>
-                <input type="password" className={inputCls} placeholder="••••••••"
-                  value={newEmployee.password} onChange={e => setNewEmployee({ ...newEmployee, password: e.target.value })} required />
-              </div>
+            <div className="space-y-2">
+              <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">User Email / Username</label>
+              <input className={inputCls} placeholder="e.g. jane@example.com"
+                value={newEmployee.email} onChange={e => setNewEmployee({ ...newEmployee, email: e.target.value })} required />
+              <p className="text-[10px] text-gray-400 italic">User must have signed up for an account first.</p>
             </div>
             <div className="space-y-2">
               <label className="font-syne text-xs font-bold uppercase tracking-wider text-gray-400">Role</label>
@@ -697,7 +714,7 @@ export default function BranchDashboard() {
               </button>
               <button type="submit"
                 className="flex-1 py-4 bg-[#FFD600] text-[#0a0a0a] font-syne font-extrabold uppercase text-sm rounded-2xl shadow-[0_4px_16px_rgba(255,214,0,.3)] hover:-translate-y-0.5 active:scale-95 transition-all">
-                Confirm
+                Promote to Staff
               </button>
             </div>
           </form>
